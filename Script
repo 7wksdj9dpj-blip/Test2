@@ -1,0 +1,555 @@
+-- Universal (PC & Mobile / Delta) Block Spin Script
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- **Глобальное состояние**
+local Settings = {
+    ESP = true,
+    ItemESP = true,
+    FOV = true,
+    Aim = false,
+    AimTarget = "Head", -- "Head" или "Torso"
+    IsAiming = false,
+    HighJump = false, 
+    JumpForce = 60,
+    FOVRadius = 120,
+    ESPColor = Color3.fromRGB(255, 30, 30)
+}
+
+-- **UI Очистка**
+local ParentGui = LocalPlayer:WaitForChild("PlayerGui")
+if ParentGui:FindFirstChild("UniversalHub") then
+    ParentGui.UniversalHub:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "UniversalHub"
+ScreenGui.Parent = ParentGui
+ScreenGui.ResetOnSpawn = false
+
+-- **1. Виджет FPS / Ping**
+local StatsFrame = Instance.new("Frame")
+local StatsCorner = Instance.new("UICorner")
+local StatsStroke = Instance.new("UIStroke")
+local StatsGradient = Instance.new("UIGradient")
+local StatsLabel = Instance.new("TextLabel")
+
+StatsFrame.Name = "StatsFrame"
+StatsFrame.Parent = ScreenGui
+StatsFrame.Position = UDim2.new(0.01, 0, 0.01, 0)
+StatsFrame.Size = UDim2.new(0, 150, 0, 28)
+StatsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+StatsFrame.BackgroundTransparency = 0.15
+StatsFrame.Active = true
+StatsFrame.Draggable = true
+
+StatsCorner.CornerRadius = UDim.new(0, 8)
+StatsCorner.Parent = StatsFrame
+
+StatsStroke.Parent = StatsFrame
+StatsStroke.Thickness = 2
+
+StatsGradient.Parent = StatsStroke
+StatsGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(20, 20, 20)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+}
+
+StatsLabel.Parent = StatsFrame
+StatsLabel.Size = UDim2.new(1, 0, 1, 0)
+StatsLabel.BackgroundTransparency = 1
+StatsLabel.Text = "FPS: ... | Ping: ..."
+StatsLabel.TextColor3 = Color3.fromRGB(255, 200, 200)
+StatsLabel.Font = Enum.Font.GothamBold
+StatsLabel.TextSize = 12
+
+local FrameCount = 0
+local LastUpdate = tick()
+
+RunService.RenderStepped:Connect(function()
+    FrameCount = FrameCount + 1
+    local now = tick()
+    if now - LastUpdate >= 0.5 then
+        local fps = math.floor(FrameCount / (now - LastUpdate))
+        local ping = 0
+        pcall(function()
+            ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+        end)
+        StatsLabel.Text = string.format("FPS: %d  |  PING: %dms", fps, ping)
+        FrameCount = 0
+        LastUpdate = now
+    end
+end)
+
+-- **2. Кнопка открытия/закрытия меню**
+local ToggleMenuBtn = Instance.new("TextButton")
+local ToggleCorner = Instance.new("UICorner")
+local ToggleStroke = Instance.new("UIStroke")
+local ToggleGradient = Instance.new("UIGradient")
+
+ToggleMenuBtn.Name = "ToggleMenuBtn"
+ToggleMenuBtn.Parent = ScreenGui
+ToggleMenuBtn.Position = UDim2.new(0.01, 0, 0.15, 0)
+ToggleMenuBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleMenuBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+ToggleMenuBtn.Text = "MENU"
+ToggleMenuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleMenuBtn.Font = Enum.Font.GothamBold
+ToggleMenuBtn.TextSize = 12
+ToggleMenuBtn.Active = true
+ToggleMenuBtn.Draggable = true
+
+ToggleCorner.CornerRadius = UDim.new(1, 0)
+ToggleCorner.Parent = ToggleMenuBtn
+
+ToggleStroke.Parent = ToggleMenuBtn
+ToggleStroke.Thickness = 2.5
+
+ToggleGradient.Parent = ToggleStroke
+ToggleGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 30, 30)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(10, 10, 10)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 30, 30))
+}
+
+-- **3. Отдельная плавающая кнопка AIM LOCK**
+local AimToggleBtn = Instance.new("TextButton")
+local AimCorner = Instance.new("UICorner")
+local AimStroke = Instance.new("UIStroke")
+local AimGradient = Instance.new("UIGradient")
+
+AimToggleBtn.Name = "AimToggleBtn"
+AimToggleBtn.Parent = ScreenGui
+AimToggleBtn.Position = UDim2.new(0.85, 0, 0.35, 0)
+AimToggleBtn.Size = UDim2.new(0, 60, 0, 60)
+AimToggleBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+AimToggleBtn.Text = "AIM\nOFF"
+AimToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+AimToggleBtn.Font = Enum.Font.GothamBold
+AimToggleBtn.TextSize = 12
+AimToggleBtn.Active = true
+AimToggleBtn.Draggable = true
+
+AimCorner.CornerRadius = UDim.new(1, 0)
+AimCorner.Parent = AimToggleBtn
+
+AimStroke.Parent = AimToggleBtn
+AimStroke.Thickness = 3
+
+AimGradient.Parent = AimStroke
+AimGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 0, 0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+}
+
+local function UpdateAimButtonState()
+    if Settings.Aim then
+        AimToggleBtn.Text = "AIM\nON"
+        AimToggleBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+        TweenService:Create(AimToggleBtn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(40, 10, 10)}):Play()
+    else
+        AimToggleBtn.Text = "AIM\nOFF"
+        AimToggleBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+        TweenService:Create(AimToggleBtn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(15, 15, 15)}):Play()
+    end
+end
+
+AimToggleBtn.MouseButton1Click:Connect(function()
+    Settings.Aim = not Settings.Aim
+    UpdateAimButtonState()
+end)
+
+-- **4. Главное меню**
+local MainFrame = Instance.new("Frame")
+local MainCorner = Instance.new("UICorner")
+local MainStroke = Instance.new("UIStroke")
+local MainGradient = Instance.new("UIGradient")
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.Position = UDim2.new(0.01, 0, 0.23, 0)
+MainFrame.Size = UDim2.new(0, 185, 0, 265)
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+MainFrame.BackgroundTransparency = 0.1
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
+
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = MainFrame
+
+MainStroke.Parent = MainFrame
+MainStroke.Thickness = 2.5
+
+MainGradient.Parent = MainStroke
+MainGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(15, 0, 0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+}
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Name = "TitleLabel"
+TitleLabel.Parent = MainFrame
+TitleLabel.Size = UDim2.new(1, 0, 0, 30)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "🔥 BLOCK SPIN HUB 🔥"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 12
+
+ToggleMenuBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+local Container = Instance.new("UIListLayout")
+Container.Parent = MainFrame
+Container.SortOrder = Enum.SortOrder.LayoutOrder
+Container.Padding = UDim.new(0, 5)
+Container.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- **5. Переливающийся Круг FOV (Rainbow)**
+local FOVFrame = Instance.new("Frame")
+local FOVCorner = Instance.new("UICorner")
+local FOVStroke = Instance.new("UIStroke")
+
+FOVFrame.Name = "FOVCircle"
+FOVFrame.Parent = ScreenGui
+FOVFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+FOVFrame.Size = UDim2.new(0, Settings.FOVRadius * 2, 0, Settings.FOVRadius * 2)
+FOVFrame.BackgroundTransparency = 1
+FOVFrame.Visible = Settings.FOV
+
+FOVCorner.CornerRadius = UDim.new(1, 0)
+FOVCorner.Parent = FOVFrame
+
+FOVStroke.Parent = FOVFrame
+FOVStroke.Thickness = 2
+
+RunService.RenderStepped:Connect(function()
+    local rot = (tick() * 60) % 360
+    StatsGradient.Rotation = rot
+    ToggleGradient.Rotation = rot
+    AimGradient.Rotation = rot
+    MainGradient.Rotation = rot
+    
+    local hue = (tick() * 0.2) % 1
+    FOVStroke.Color = Color3.fromHSV(hue, 0.8, 1)
+end)
+
+local function UpdateFOVSize()
+    FOVFrame.Size = UDim2.new(0, Settings.FOVRadius * 2, 0, Settings.FOVRadius * 2)
+end
+
+local function CreateToggleButton(name, text, defaultState, onClick)
+    local btn = Instance.new("TextButton")
+    local corner = Instance.new("UICorner")
+    local stroke = Instance.new("UIStroke")
+    
+    btn.Name = name
+    btn.Parent = MainFrame
+    btn.Size = UDim2.new(0.9, 0, 0, 28)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.Active = true
+    
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
+    
+    stroke.Parent = btn
+    stroke.Thickness = 1
+    
+    local function UpdateAppearence(state)
+        if state then
+            btn.Text = text .. " [ON]"
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            stroke.Color = Color3.fromRGB(255, 40, 40)
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(180, 20, 20)}):Play()
+            btn.BackgroundTransparency = 0.1
+        else
+            btn.Text = text .. " [OFF]"
+            btn.TextColor3 = Color3.fromRGB(150, 150, 150)
+            stroke.Color = Color3.fromRGB(40, 40, 40)
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}):Play()
+            btn.BackgroundTransparency = 0.2
+        end
+    end
+    
+    UpdateAppearence(defaultState)
+    btn.MouseButton1Click:Connect(function()
+        local newState = onClick()
+        UpdateAppearence(newState)
+    end)
+end
+
+-- Переключатель цели Аима (Голова / Тело)
+local AimTargetBtn = Instance.new("TextButton")
+local AimTargetCorner = Instance.new("UICorner")
+local AimTargetStroke = Instance.new("UIStroke")
+
+AimTargetBtn.Name = "AimTargetBtn"
+AimTargetBtn.Parent = MainFrame
+AimTargetBtn.Size = UDim2.new(0.9, 0, 0, 28)
+AimTargetBtn.Font = Enum.Font.GothamBold
+AimTargetBtn.TextSize = 11
+AimTargetBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
+AimTargetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+AimTargetBtn.Text = "ЦЕЛЬ АИМА: ГОЛОВА"
+
+AimTargetCorner.CornerRadius = UDim.new(0, 6)
+AimTargetCorner.Parent = AimTargetBtn
+
+AimTargetStroke.Parent = AimTargetBtn
+AimTargetStroke.Thickness = 1
+AimTargetStroke.Color = Color3.fromRGB(255, 40, 40)
+
+AimTargetBtn.MouseButton1Click:Connect(function()
+    if Settings.AimTarget == "Head" then
+        Settings.AimTarget = "Torso"
+        AimTargetBtn.Text = "ЦЕЛЬ АИМА: ТЕЛО"
+    else
+        Settings.AimTarget = "Head"
+        AimTargetBtn.Text = "ЦЕЛЬ АИМА: ГОЛОВА"
+    end
+end)
+
+-- Кнопки функций
+CreateToggleButton("ESPBtn", "Wallhack ESP", Settings.ESP, function()
+    Settings.ESP = not Settings.ESP
+    return Settings.ESP
+end)
+
+CreateToggleButton("ItemBtn", "Предметы", Settings.ItemESP, function()
+    Settings.ItemESP = not Settings.ItemESP
+    return Settings.ItemESP
+end)
+
+CreateToggleButton("FOVBtn", "Круг FOV", Settings.FOV, function()
+    Settings.FOV = not Settings.FOV
+    FOVFrame.Visible = Settings.FOV
+    return Settings.FOV
+end)
+
+-- Регулировка FOV ( - / + )
+local FOVControlFrame = Instance.new("Frame")
+FOVControlFrame.Parent = MainFrame
+FOVControlFrame.Size = UDim2.new(0.9, 0, 0, 28)
+FOVControlFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+FOVControlFrame.BackgroundTransparency = 0.1
+
+local FOVControlCorner = Instance.new("UICorner")
+FOVControlCorner.CornerRadius = UDim.new(0, 6)
+FOVControlCorner.Parent = FOVControlFrame
+
+local MinusBtn = Instance.new("TextButton")
+MinusBtn.Parent = FOVControlFrame
+MinusBtn.Size = UDim2.new(0, 30, 1, 0)
+MinusBtn.BackgroundTransparency = 1
+MinusBtn.Text = "-"
+MinusBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+MinusBtn.Font = Enum.Font.GothamBold
+MinusBtn.TextSize = 16
+
+local PlusBtn = Instance.new("TextButton")
+PlusBtn.Parent = FOVControlFrame
+PlusBtn.Size = UDim2.new(0, 30, 1, 0)
+PlusBtn.Position = UDim2.new(1, -30, 0, 0)
+PlusBtn.BackgroundTransparency = 1
+PlusBtn.Text = "+"
+PlusBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+PlusBtn.Font = Enum.Font.GothamBold
+PlusBtn.TextSize = 16
+
+local FOVValLabel = Instance.new("TextLabel")
+FOVValLabel.Parent = FOVControlFrame
+FOVValLabel.Size = UDim2.new(1, -60, 1, 0)
+FOVValLabel.Position = UDim2.new(0, 30, 0, 0)
+FOVValLabel.BackgroundTransparency = 1
+FOVValLabel.Text = "FOV: " .. Settings.FOVRadius
+FOVValLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+FOVValLabel.Font = Enum.Font.GothamBold
+FOVValLabel.TextSize = 11
+
+MinusBtn.MouseButton1Click:Connect(function()
+    if Settings.FOVRadius > 30 then
+        Settings.FOVRadius = Settings.FOVRadius - 10
+        FOVValLabel.Text = "FOV: " .. Settings.FOVRadius
+        UpdateFOVSize()
+    end
+end)
+
+PlusBtn.MouseButton1Click:Connect(function()
+    if Settings.FOVRadius < 350 then
+        Settings.FOVRadius = Settings.FOVRadius + 10
+        FOVValLabel.Text = "FOV: " .. Settings.FOVRadius
+        UpdateFOVSize()
+    end
+end)
+
+CreateToggleButton("JumpBtn", "Высокий Прыжок", Settings.HighJump, function()
+    Settings.HighJump = not Settings.HighJump
+    return Settings.HighJump
+end)
+
+-- **6. Бинд открытия меню для ПК (Insert / RightShift) и зажатия ПКМ**
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.RightShift then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        Settings.IsAiming = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        Settings.IsAiming = false
+    end
+end)
+
+-- **7. Прыжок (Сила 60)**
+local function HookSmoothJump()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    
+    if hum and root then
+        hum.Jumping:Connect(function()
+            if Settings.HighJump then
+                task.wait(0.02)
+                root.AssemblyLinearVelocity = Vector3.new(
+                    root.AssemblyLinearVelocity.X,
+                    Settings.JumpForce,
+                    root.AssemblyLinearVelocity.Z
+                )
+            end
+        end)
+    end
+end
+
+if LocalPlayer.Character then HookSmoothJump() end
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    HookSmoothJump()
+end)
+
+-- **8. ESP и Отслеживание Предметов**
+local function GetEquippedItem(character)
+    if not character then return "Пусто" end
+    local tool = character:FindFirstChildOfClass("Tool")
+    return tool and tool.Name or "Кулаки"
+end
+
+local function ApplyESP(player)
+    if player == LocalPlayer then return end
+
+    local function SetupCharacter(character)
+        if not character then return end
+        
+        local head = character:WaitForChild("Head", 4)
+        local humanoid = character:WaitForChild("Humanoid", 4)
+        local rootPart = character:WaitForChild("HumanoidRootPart", 4)
+        if not head or not humanoid or not rootPart then return end
+
+        local highlight = character:FindFirstChild("Universal_Highlight") or Instance.new("Highlight")
+        highlight.Name = "Universal_Highlight"
+        highlight.Parent = character
+        highlight.Adornee = character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillColor = Settings.ESPColor
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.Enabled = Settings.ESP
+
+        local billboard = head:FindFirstChild("Universal_ItemESP") or Instance.new("BillboardGui")
+        billboard.Name = "Universal_ItemESP"
+        billboard.Parent = head
+        billboard.Adornee = head
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 2.8, 0)
+        billboard.AlwaysOnTop = true
+
+        local textLabel = billboard:FindFirstChild("ESPText") or Instance.new("TextLabel")
+        textLabel.Name = "ESPText"
+        textLabel.Parent = billboard
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.TextStrokeTransparency = 0
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextSize = 11
+
+        task.spawn(function()
+            while character and character.Parent and humanoid.Health > 0 do
+                highlight.Enabled = Settings.ESP
+                billboard.Enabled = Settings.ESP or Settings.ItemESP
+
+                local itemText = Settings.ItemESP and ("[ " .. GetEquippedItem(character) .. " ]") or ""
+                local hpText = string.format("HP: %d/%d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+                
+                local distStr = ""
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = math.floor((rootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
+                    distStr = "[" .. dist .. "m]"
+                end
+                
+                textLabel.Text = string.format("%s %s\n%s\n%s", player.Name, distStr, itemText, hpText)
+                task.wait(0.15)
+            end
+            if billboard then billboard:Destroy() end
+            if highlight then highlight:Destroy() end
+        end)
+    end
+
+    if player.Character then SetupCharacter(player.Character) end
+    player.CharacterAdded:Connect(SetupCharacter)
+end
+
+for _, player in pairs(Players:GetPlayers()) do ApplyESP(player) end
+Players.PlayerAdded:Connect(ApplyESP)
+
+-- **9. Auto Aim**
+local function GetClosestTarget()
+    local NearestTarget = nil
+    local ShortestDistance = Settings.FOVRadius
+    local CenterPos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            local targetPart = player.Character:FindFirstChild(Settings.AimTarget == "Head" and "Head" or "HumanoidRootPart")
+            
+            if humanoid and humanoid.Health > 0 and targetPart then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - CenterPos).Magnitude
+                    if dist < ShortestDistance then
+                        ShortestDistance = dist
+                        NearestTarget = targetPart
+                    end
+                end
+            end
+        end
+    end
+    return NearestTarget
+end
+
+RunService.RenderStepped:Connect(function()
+    -- Работает либо если включена кнопка Aim, либо зажата ПКМ на компьютере
+    if Settings.Aim or Settings.IsAiming then
+        local target = GetClosestTarget()
+        if target then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
+        end
+    end
+end)
